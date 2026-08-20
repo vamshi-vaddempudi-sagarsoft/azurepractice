@@ -10,7 +10,6 @@
 		"typeProperties": {
 			"location": {
 				"type": "AzureBlobStorageLocation",
-				"fileName": "data_flows_activity_output.csv",
 				"folderPath": "sourcefiles",
 				"container": "samplecontainer"
 			},
