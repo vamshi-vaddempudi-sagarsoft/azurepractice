@@ -37,6 +37,9 @@
 				},
 				{
 					"name": "filter1"
+				},
+				{
+					"name": "select2"
 				}
 			],
 			"scriptLines": [
@@ -78,7 +81,19 @@
 				"     skipDuplicateMapInputs: true,",
 				"     skipDuplicateMapOutputs: true) ~> select1",
 				"select1 filter(DepartmentName=='IT') ~> filter1",
-				"filter1 sink(allowSchemaDrift: true,",
+				"filter1 select(mapColumn(",
+				"          EmployeeID,",
+				"          EmployeeName,",
+				"          Department,",
+				"          Salary,",
+				"          DepartmentID,",
+				"          DepartmentName,",
+				"          Location,",
+				"          ManagerName",
+				"     ),",
+				"     skipDuplicateMapInputs: true,",
+				"     skipDuplicateMapOutputs: true) ~> select2",
+				"select2 sink(allowSchemaDrift: true,",
 				"     validateSchema: false,",
 				"     skipDuplicateMapInputs: true,",
 				"     skipDuplicateMapOutputs: true) ~> sink1"
