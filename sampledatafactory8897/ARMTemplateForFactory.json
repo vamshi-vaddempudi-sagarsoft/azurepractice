@@ -218,7 +218,7 @@
 			"properties": {
 				"activities": [
 					{
-						"name": "GetActiveEntities",
+						"name": "GetActiveDimensions",
 						"type": "Lookup",
 						"dependsOn": [],
 						"policy": {
@@ -231,7 +231,7 @@
 						"typeProperties": {
 							"source": {
 								"type": "AzureSqlSource",
-								"sqlReaderQuery": "SELECT EntityId, EntityName, Priority FROM meta.EntityConfig WHERE IsActive = 1 ORDER BY Priority",
+								"sqlReaderQuery": "SELECT EntityId, EntityName, Priority FROM meta.EntityConfig WHERE IsActive = 1 AND EntityType = 'Dimension' ORDER BY Priority",
 								"partitionOption": "None"
 							},
 							"dataset": {
@@ -246,11 +246,11 @@
 						}
 					},
 					{
-						"name": "ForEachEntity",
+						"name": "ForEachDimension",
 						"type": "ForEach",
 						"dependsOn": [
 							{
-								"activity": "GetActiveEntities",
+								"activity": "GetActiveDimensions",
 								"dependencyConditions": [
 									"Succeeded"
 								]
@@ -259,13 +259,93 @@
 						"userProperties": [],
 						"typeProperties": {
 							"items": {
-								"value": "@activity('GetActiveEntities').output.value",
+								"value": "@activity('GetActiveDimensions').output.value",
+								"type": "Expression"
+							},
+							"isSequential": false,
+							"batchCount": 4,
+							"activities": [
+								{
+									"name": "ExecuteDimensionPipeline",
+									"type": "ExecutePipeline",
+									"dependsOn": [],
+									"policy": {
+										"secureInput": false
+									},
+									"userProperties": [],
+									"typeProperties": {
+										"pipeline": {
+											"referenceName": "pl_MetaDriven_ProcessEntity",
+											"type": "PipelineReference"
+										},
+										"waitOnCompletion": true,
+										"parameters": {
+											"EntityId": {
+												"value": "@item().EntityId",
+												"type": "Expression"
+											}
+										}
+									}
+								}
+							]
+						}
+					},
+					{
+						"name": "GetActiveFacts",
+						"type": "Lookup",
+						"dependsOn": [
+							{
+								"activity": "ForEachDimension",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"policy": {
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"source": {
+								"type": "AzureSqlSource",
+								"sqlReaderQuery": "SELECT EntityId, EntityName, Priority FROM meta.EntityConfig WHERE IsActive = 1 AND EntityType = 'Fact' ORDER BY Priority",
+								"partitionOption": "None"
+							},
+							"dataset": {
+								"referenceName": "DS_ControlDB_Table",
+								"type": "DatasetReference",
+								"parameters": {
+									"schemaName": "meta",
+									"tableName": "EntityConfig"
+								}
+							},
+							"firstRowOnly": false
+						}
+					},
+					{
+						"name": "ForEachFact",
+						"type": "ForEach",
+						"dependsOn": [
+							{
+								"activity": "GetActiveFacts",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"userProperties": [],
+						"typeProperties": {
+							"items": {
+								"value": "@activity('GetActiveFacts').output.value",
 								"type": "Expression"
 							},
 							"isSequential": true,
 							"activities": [
 								{
-									"name": "ExecuteEntityPipeline",
+									"name": "ExecuteFactPipeline",
 									"type": "ExecutePipeline",
 									"dependsOn": [],
 									"policy": {
@@ -321,7 +401,7 @@
 							"source": {
 								"type": "AzureSqlSource",
 								"sqlReaderQuery": {
-									"value": "SELECT e.EntityId, e.EntityName, e.EntityType, e.SCDType, e.StagingTable, e.TargetTable, e.BusinessKeyColumns, e.SourceContainer, e.SourcePathPattern, e.SourceFileName, (SELECT STRING_AGG(TargetColumn, ',') FROM meta.ColumnMapping cm WHERE cm.EntityId = e.EntityId AND cm.IsBusinessKey = 0) AS AttributeColumns, CASE WHEN e.EntityType='Fact' THEN 'Fact' WHEN e.SCDType=2 THEN 'SCD2' ELSE 'SCD1Generic' END AS LoadPath FROM meta.EntityConfig e WHERE e.EntityId = @{pipeline().parameters.EntityId}",
+									"value": "SELECT e.EntityId, e.EntityName, e.EntityType, e.SCDType, e.StagingTable, e.TargetTable, e.BusinessKeyColumns, e.SourceContainer, e.SourcePathPattern, e.SourceFileName, e.ChunkSize, (SELECT STRING_AGG(TargetColumn, ',') FROM meta.ColumnMapping cm WHERE cm.EntityId = e.EntityId AND cm.IsBusinessKey = 0) AS AttributeColumns, CASE WHEN e.EntityType='Fact' THEN 'Fact' WHEN e.SCDType=2 THEN 'SCD2' ELSE 'SCD1Generic' END AS LoadPath FROM meta.EntityConfig e WHERE e.EntityId = @{pipeline().parameters.EntityId}",
 									"type": "Expression"
 								},
 								"partitionOption": "None"
@@ -338,8 +418,8 @@
 						}
 					},
 					{
-						"name": "LandToStaging",
-						"type": "Copy",
+						"name": "LogRunStart",
+						"type": "SqlServerStoredProcedure",
 						"dependsOn": [
 							{
 								"activity": "GetEntityConfig",
@@ -356,15 +436,93 @@
 						},
 						"userProperties": [],
 						"typeProperties": {
+							"storedProcedureName": "meta.usp_LogRunStart",
+							"storedProcedureParameters": {
+								"PipelineName": {
+									"value": "pl_MetaDriven_ProcessEntity",
+									"type": "String"
+								},
+								"ADFRunId": {
+									"value": {
+										"value": "@pipeline().RunId",
+										"type": "Expression"
+									},
+									"type": "String"
+								},
+								"EntityId": {
+									"value": {
+										"value": "@pipeline().parameters.EntityId",
+										"type": "Expression"
+									},
+									"type": "Int32"
+								}
+							}
+						},
+						"linkedServiceName": {
+							"referenceName": "LS_ControlDB",
+							"type": "LinkedServiceReference"
+						}
+					},
+					{
+						"name": "ClearStaging",
+						"type": "SqlServerStoredProcedure",
+						"dependsOn": [
+							{
+								"activity": "LogRunStart",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"policy": {
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"storedProcedureName": "meta.usp_TruncateControlTable",
+							"storedProcedureParameters": {
+								"TableName": {
+									"value": {
+										"value": "@activity('GetEntityConfig').output.firstRow.StagingTable",
+										"type": "Expression"
+									},
+									"type": "String"
+								}
+							}
+						},
+						"linkedServiceName": {
+							"referenceName": "LS_ControlDB",
+							"type": "LinkedServiceReference"
+						}
+					},
+					{
+						"name": "LandToStaging",
+						"type": "Copy",
+						"dependsOn": [
+							{
+								"activity": "ClearStaging",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"policy": {
+							"timeout": "0.00:30:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
 							"source": {
 								"type": "DelimitedTextSource"
 							},
 							"sink": {
-								"type": "AzureSqlSink",
-								"preCopyScript": {
-									"value": "@concat('DELETE FROM ', activity('GetEntityConfig').output.firstRow.StagingTable)",
-									"type": "Expression"
-								}
+								"type": "AzureSqlSink"
 							},
 							"enableStaging": false
 						},
@@ -406,7 +564,75 @@
 						]
 					},
 					{
-						"name": "Validate",
+						"name": "DeadLetterCopy",
+						"type": "Copy",
+						"dependsOn": [
+							{
+								"activity": "LandToStaging",
+								"dependencyConditions": [
+									"Failed"
+								]
+							}
+						],
+						"policy": {
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"source": {
+								"type": "DelimitedTextSource"
+							},
+							"sink": {
+								"type": "DelimitedTextSink"
+							},
+							"enableStaging": false
+						},
+						"inputs": [
+							{
+								"referenceName": "DS_ADLS_CSV",
+								"type": "DatasetReference",
+								"parameters": {
+									"container": {
+										"value": "@activity('GetEntityConfig').output.firstRow.SourceContainer",
+										"type": "Expression"
+									},
+									"folderPath": {
+										"value": "@activity('GetEntityConfig').output.firstRow.SourcePathPattern",
+										"type": "Expression"
+									},
+									"fileName": {
+										"value": "@activity('GetEntityConfig').output.firstRow.SourceFileName",
+										"type": "Expression"
+									}
+								}
+							}
+						],
+						"outputs": [
+							{
+								"referenceName": "DS_ADLS_CSV",
+								"type": "DatasetReference",
+								"parameters": {
+									"container": {
+										"value": "@activity('GetEntityConfig').output.firstRow.SourceContainer",
+										"type": "Expression"
+									},
+									"folderPath": {
+										"value": "@concat('_quarantine/', activity('GetEntityConfig').output.firstRow.EntityName, '/', formatDateTime(utcnow(), 'yyyyMMddHHmmss'), '/')",
+										"type": "Expression"
+									},
+									"fileName": {
+										"value": "@activity('GetEntityConfig').output.firstRow.SourceFileName",
+										"type": "Expression"
+									}
+								}
+							}
+						]
+					},
+					{
+						"name": "LogFileLanded",
 						"type": "SqlServerStoredProcedure",
 						"dependsOn": [
 							{
@@ -424,7 +650,7 @@
 						},
 						"userProperties": [],
 						"typeProperties": {
-							"storedProcedureName": "meta.usp_ValidateEntity",
+							"storedProcedureName": "meta.usp_LogFile",
 							"storedProcedureParameters": {
 								"EntityId": {
 									"value": {
@@ -433,11 +659,29 @@
 									},
 									"type": "Int32"
 								},
-								"BatchId": {
+								"FilePath": {
 									"value": {
-										"value": "@pipeline().RunId",
+										"value": "@concat(activity('GetEntityConfig').output.firstRow.SourceContainer, '/', activity('GetEntityConfig').output.firstRow.SourcePathPattern)",
 										"type": "Expression"
 									},
+									"type": "String"
+								},
+								"FileName": {
+									"value": {
+										"value": "@activity('GetEntityConfig').output.firstRow.SourceFileName",
+										"type": "Expression"
+									},
+									"type": "String"
+								},
+								"FileRowCount": {
+									"value": {
+										"value": "@activity('LandToStaging').output.rowsCopied",
+										"type": "Expression"
+									},
+									"type": "Int64"
+								},
+								"ValidationStatus": {
+									"value": "Landed",
 									"type": "String"
 								}
 							}
@@ -448,18 +692,92 @@
 						}
 					},
 					{
+						"name": "ValidateChunks",
+						"type": "ForEach",
+						"dependsOn": [
+							{
+								"activity": "LandToStaging",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"userProperties": [],
+						"typeProperties": {
+							"items": {
+								"value": "@range(0, div(add(activity('LandToStaging').output.rowsCopied, sub(activity('GetEntityConfig').output.firstRow.ChunkSize, 1)), activity('GetEntityConfig').output.firstRow.ChunkSize))",
+								"type": "Expression"
+							},
+							"isSequential": false,
+							"batchCount": 4,
+							"activities": [
+								{
+									"name": "ValidateChunk",
+									"type": "SqlServerStoredProcedure",
+									"dependsOn": [],
+									"policy": {
+										"timeout": "0.00:30:00",
+										"retry": 1,
+										"retryIntervalInSeconds": 30,
+										"secureOutput": false,
+										"secureInput": false
+									},
+									"userProperties": [],
+									"typeProperties": {
+										"storedProcedureName": "meta.usp_ValidateEntity",
+										"storedProcedureParameters": {
+											"EntityId": {
+												"value": {
+													"value": "@pipeline().parameters.EntityId",
+													"type": "Expression"
+												},
+												"type": "Int32"
+											},
+											"BatchId": {
+												"value": {
+													"value": "@pipeline().RunId",
+													"type": "Expression"
+												},
+												"type": "String"
+											},
+											"StartRowId": {
+												"value": {
+													"value": "@add(mul(item(), activity('GetEntityConfig').output.firstRow.ChunkSize), 1)",
+													"type": "Expression"
+												},
+												"type": "Int64"
+											},
+											"EndRowId": {
+												"value": {
+													"value": "@min(mul(add(item(), 1), activity('GetEntityConfig').output.firstRow.ChunkSize), activity('LandToStaging').output.rowsCopied)",
+													"type": "Expression"
+												},
+												"type": "Int64"
+											}
+										}
+									},
+									"linkedServiceName": {
+										"referenceName": "LS_ControlDB",
+										"type": "LinkedServiceReference"
+									}
+								}
+							]
+						}
+					},
+					{
 						"name": "Dedupe",
 						"type": "SqlServerStoredProcedure",
 						"dependsOn": [
 							{
-								"activity": "Validate",
+								"activity": "ValidateChunks",
 								"dependencyConditions": [
 									"Succeeded"
 								]
 							}
 						],
 						"policy": {
-							"retry": 0,
+							"timeout": "0.00:30:00",
+							"retry": 1,
 							"retryIntervalInSeconds": 30,
 							"secureOutput": false,
 							"secureInput": false
@@ -487,6 +805,44 @@
 						"linkedServiceName": {
 							"referenceName": "LS_ControlDB",
 							"type": "LinkedServiceReference"
+						}
+					},
+					{
+						"name": "GetRejectedCount",
+						"type": "Lookup",
+						"dependsOn": [
+							{
+								"activity": "Dedupe",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"policy": {
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"source": {
+								"type": "AzureSqlSource",
+								"sqlReaderQuery": {
+									"value": "@concat('SELECT (SELECT COUNT(*) FROM stg.ErrorRows WHERE EntityName=''', activity('GetEntityConfig').output.firstRow.EntityName, ''' AND BatchId=''', pipeline().RunId, ''') + (SELECT COUNT(*) FROM stg.DuplicateLog WHERE EntityName=''', activity('GetEntityConfig').output.firstRow.EntityName, ''' AND BatchId=''', pipeline().RunId, ''') AS RejectedCount')",
+									"type": "Expression"
+								},
+								"partitionOption": "None"
+							},
+							"dataset": {
+								"referenceName": "DS_ControlDB_Table",
+								"type": "DatasetReference",
+								"parameters": {
+									"schemaName": "stg",
+									"tableName": "ErrorRows"
+								}
+							},
+							"firstRowOnly": true
 						}
 					},
 					{
@@ -536,6 +892,7 @@
 							}
 						],
 						"policy": {
+							"timeout": "0.00:30:00",
 							"retry": 0,
 							"retryIntervalInSeconds": 30,
 							"secureOutput": false,
@@ -609,8 +966,8 @@
 									"value": "Fact",
 									"activities": [
 										{
-											"name": "LoadFact",
-											"type": "SqlServerStoredProcedure",
+											"name": "GetWatermark",
+											"type": "Lookup",
 											"dependsOn": [],
 											"policy": {
 												"retry": 0,
@@ -620,10 +977,128 @@
 											},
 											"userProperties": [],
 											"typeProperties": {
-												"storedProcedureName": "dw.usp_LoadFactSales"
+												"source": {
+													"type": "AzureSqlSource",
+													"sqlReaderQuery": "SELECT LastWatermarkValue FROM meta.Watermark WHERE EntityName = 'SalesOrder'",
+													"partitionOption": "None"
+												},
+												"dataset": {
+													"referenceName": "DS_ControlDB_Table",
+													"type": "DatasetReference",
+													"parameters": {
+														"schemaName": "meta",
+														"tableName": "Watermark"
+													}
+												},
+												"firstRowOnly": true
+											}
+										},
+										{
+											"name": "LoadFact",
+											"type": "SqlServerStoredProcedure",
+											"dependsOn": [
+												{
+													"activity": "GetWatermark",
+													"dependencyConditions": [
+														"Succeeded"
+													]
+												}
+											],
+											"policy": {
+												"retry": 0,
+												"retryIntervalInSeconds": 30,
+												"secureOutput": false,
+												"secureInput": false
+											},
+											"userProperties": [],
+											"typeProperties": {
+												"storedProcedureName": "dw.usp_LoadFactSales",
+												"storedProcedureParameters": {
+													"WatermarkDate": {
+														"value": {
+															"value": "@activity('GetWatermark').output.firstRow.LastWatermarkValue",
+															"type": "Expression"
+														},
+														"type": "String"
+													}
+												}
 											},
 											"linkedServiceName": {
 												"referenceName": "LS_Synapse",
+												"type": "LinkedServiceReference"
+											}
+										},
+										{
+											"name": "GetNewWatermarkValue",
+											"type": "Lookup",
+											"dependsOn": [
+												{
+													"activity": "LoadFact",
+													"dependencyConditions": [
+														"Succeeded"
+													]
+												}
+											],
+											"policy": {
+												"retry": 0,
+												"retryIntervalInSeconds": 30,
+												"secureOutput": false,
+												"secureInput": false
+											},
+											"userProperties": [],
+											"typeProperties": {
+												"source": {
+													"type": "AzureSqlSource",
+													"sqlReaderQuery": "SELECT CONVERT(VARCHAR(10), MAX(OrderDate), 23) AS MaxDate FROM stg.SalesOrder",
+													"partitionOption": "None"
+												},
+												"dataset": {
+													"referenceName": "DS_ControlDB_Table",
+													"type": "DatasetReference",
+													"parameters": {
+														"schemaName": "stg",
+														"tableName": "SalesOrder"
+													}
+												},
+												"firstRowOnly": true
+											}
+										},
+										{
+											"name": "UpdateWatermark",
+											"type": "SqlServerStoredProcedure",
+											"dependsOn": [
+												{
+													"activity": "GetNewWatermarkValue",
+													"dependencyConditions": [
+														"Succeeded"
+													]
+												}
+											],
+											"policy": {
+												"retry": 0,
+												"retryIntervalInSeconds": 30,
+												"secureOutput": false,
+												"secureInput": false
+											},
+											"userProperties": [],
+											"typeProperties": {
+												"storedProcedureName": "meta.usp_UpdateWatermark",
+												"storedProcedureParameters": {
+													"EntityName": {
+														"value": "SalesOrder",
+														"type": "String"
+													},
+													"NewWatermarkValue": {
+														"value": {
+															"value": "@activity('GetNewWatermarkValue').output.firstRow.MaxDate",
+															"type": "Expression"
+														},
+														"type": "String"
+													}
+												}
+											},
+											"linkedServiceName": {
+												"referenceName": "LS_ControlDB",
 												"type": "LinkedServiceReference"
 											}
 										}
@@ -706,6 +1181,133 @@
 								}
 							]
 						}
+					},
+					{
+						"name": "LogRunSuccess",
+						"type": "SqlServerStoredProcedure",
+						"dependsOn": [
+							{
+								"activity": "LoadWarehouse",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							},
+							{
+								"activity": "GetRejectedCount",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"policy": {
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"storedProcedureName": "meta.usp_LogRunComplete",
+							"storedProcedureParameters": {
+								"ADFRunId": {
+									"value": {
+										"value": "@pipeline().RunId",
+										"type": "Expression"
+									},
+									"type": "String"
+								},
+								"EntityId": {
+									"value": {
+										"value": "@pipeline().parameters.EntityId",
+										"type": "Expression"
+									},
+									"type": "Int32"
+								},
+								"Status": {
+									"value": "Success",
+									"type": "String"
+								},
+								"RowsRead": {
+									"value": {
+										"value": "@activity('LandToStaging').output.rowsCopied",
+										"type": "Expression"
+									},
+									"type": "Int64"
+								},
+								"RowsInserted": {
+									"value": {
+										"value": "@activity('LandCleanToSynapse').output.rowsCopied",
+										"type": "Expression"
+									},
+									"type": "Int64"
+								},
+								"RowsRejected": {
+									"value": {
+										"value": "@activity('GetRejectedCount').output.firstRow.RejectedCount",
+										"type": "Expression"
+									},
+									"type": "Int64"
+								}
+							}
+						},
+						"linkedServiceName": {
+							"referenceName": "LS_ControlDB",
+							"type": "LinkedServiceReference"
+						}
+					},
+					{
+						"name": "LogRunFailure",
+						"type": "SqlServerStoredProcedure",
+						"dependsOn": [
+							{
+								"activity": "LoadWarehouse",
+								"dependencyConditions": [
+									"Failed",
+									"Skipped"
+								]
+							}
+						],
+						"policy": {
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"storedProcedureName": "meta.usp_LogRunComplete",
+							"storedProcedureParameters": {
+								"ADFRunId": {
+									"value": {
+										"value": "@pipeline().RunId",
+										"type": "Expression"
+									},
+									"type": "String"
+								},
+								"EntityId": {
+									"value": {
+										"value": "@pipeline().parameters.EntityId",
+										"type": "Expression"
+									},
+									"type": "Int32"
+								},
+								"Status": {
+									"value": "Failed",
+									"type": "String"
+								},
+								"ErrorMessage": {
+									"value": {
+										"value": "@concat('Run failed for EntityId=', string(pipeline().parameters.EntityId), '. Check ADF Monitor, RunId=', pipeline().RunId, ' for the exact activity and error.')",
+										"type": "Expression"
+									},
+									"type": "String"
+								}
+							}
+						},
+						"linkedServiceName": {
+							"referenceName": "LS_ControlDB",
+							"type": "LinkedServiceReference"
+						}
 					}
 				],
 				"policy": {
@@ -720,8 +1322,8 @@
 			},
 			"dependsOn": [
 				"[concat(variables('factoryId'), '/datasets/DS_ControlDB_Table')]",
-				"[concat(variables('factoryId'), '/datasets/DS_ADLS_CSV')]",
 				"[concat(variables('factoryId'), '/linkedServices/LS_ControlDB')]",
+				"[concat(variables('factoryId'), '/datasets/DS_ADLS_CSV')]",
 				"[concat(variables('factoryId'), '/linkedServices/LS_Synapse')]",
 				"[concat(variables('factoryId'), '/datasets/DS_Synapse_Table')]"
 			]
