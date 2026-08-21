@@ -4,12 +4,12 @@
   "properties": {
   "activities": [
     {
-      "name": "GetActiveEntities",
+      "name": "GetActiveDimensions",
       "type": "Lookup",
       "typeProperties": {
         "source": {
           "type": "AzureSqlSource",
-          "sqlReaderQuery": "SELECT EntityId, EntityName, Priority FROM meta.EntityConfig WHERE IsActive = 1 ORDER BY Priority"
+          "sqlReaderQuery": "SELECT EntityId, EntityName, Priority FROM meta.EntityConfig WHERE IsActive = 1 AND EntityType = 'Dimension' ORDER BY Priority"
         },
         "dataset": {
           "referenceName": "DS_ControlDB_Table",
@@ -20,15 +20,55 @@
       }
     },
     {
-      "name": "ForEachEntity",
+      "name": "ForEachDimension",
       "type": "ForEach",
-      "dependsOn": [ { "activity": "GetActiveEntities", "dependencyConditions": [ "Succeeded" ] } ],
+      "dependsOn": [ { "activity": "GetActiveDimensions", "dependencyConditions": [ "Succeeded" ] } ],
       "typeProperties": {
-        "items": { "value": "@activity('GetActiveEntities').output.value", "type": "Expression" },
+        "items": { "value": "@activity('GetActiveDimensions').output.value", "type": "Expression" },
+        "isSequential": false,
+        "batchCount": 4,
+        "activities": [
+          {
+            "name": "ExecuteDimensionPipeline",
+            "type": "ExecutePipeline",
+            "typeProperties": {
+              "pipeline": { "referenceName": "pl_MetaDriven_ProcessEntity", "type": "PipelineReference" },
+              "waitOnCompletion": true,
+              "parameters": {
+                "EntityId": { "value": "@item().EntityId", "type": "Expression" }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "GetActiveFacts",
+      "type": "Lookup",
+      "dependsOn": [ { "activity": "ForEachDimension", "dependencyConditions": [ "Succeeded" ] } ],
+      "typeProperties": {
+        "source": {
+          "type": "AzureSqlSource",
+          "sqlReaderQuery": "SELECT EntityId, EntityName, Priority FROM meta.EntityConfig WHERE IsActive = 1 AND EntityType = 'Fact' ORDER BY Priority"
+        },
+        "dataset": {
+          "referenceName": "DS_ControlDB_Table",
+          "type": "DatasetReference",
+          "parameters": { "schemaName": "meta", "tableName": "EntityConfig" }
+        },
+        "firstRowOnly": false
+      }
+    },
+    {
+      "name": "ForEachFact",
+      "type": "ForEach",
+      "dependsOn": [ { "activity": "GetActiveFacts", "dependencyConditions": [ "Succeeded" ] } ],
+      "typeProperties": {
+        "items": { "value": "@activity('GetActiveFacts').output.value", "type": "Expression" },
         "isSequential": true,
         "activities": [
           {
-            "name": "ExecuteEntityPipeline",
+            "name": "ExecuteFactPipeline",
             "type": "ExecutePipeline",
             "typeProperties": {
               "pipeline": { "referenceName": "pl_MetaDriven_ProcessEntity", "type": "PipelineReference" },
