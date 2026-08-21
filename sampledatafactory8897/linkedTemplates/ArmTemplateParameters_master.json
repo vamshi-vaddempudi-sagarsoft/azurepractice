@@ -11,6 +11,12 @@
 		"LS_AzureBlobStorage1_connectionString": {
 			"value": ""
 		},
+		"LS_ControlDB_connectionString": {
+			"value": "Integrated Security=False;Encrypt=true;Connection Timeout=30;Data Source=tcp:samplesqlserver.database.windows.net,1433;Initial Catalog=sampledatabase;User ID=sqladmin;TrustServerCertificate=false"
+		},
+		"LS_Synapse_connectionString": {
+			"value": "Integrated Security=False;Encrypt=true;Connection Timeout=30;Data Source=tcp:samplesynapsews0821.sql.azuresynapse.net,1433;Initial Catalog=salesdw;User ID=synadmin;TrustServerCertificate=false"
+		},
 		"AzureSqlDatabase1_properties_typeProperties_server": {
 			"value": "samplesqlserver.database.windows.net"
 		},
@@ -19,6 +25,12 @@
 		},
 		"AzureSqlDatabase1_properties_typeProperties_userName": {
 			"value": "sqladmin"
+		},
+		"LS_ADLS_properties_typeProperties_url": {
+			"value": "https://samplestorageaccount8897.dfs.core.windows.net"
+		},
+		"LS_KeyVault_properties_typeProperties_baseUrl": {
+			"value": "https://samplekv0821.vault.azure.net/"
 		},
 		"containerUri": {
 			"value": ""
