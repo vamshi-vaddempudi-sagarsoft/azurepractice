@@ -1,29 +1,16 @@
-﻿{
-    "name":  "DS_ControlDB_Table",
-    "properties":  {
-                       "type":  "AzureSqlTable",
-                       "linkedServiceName":  {
-                                                 "referenceName":  "LS_ControlDB",
-                                                 "type":  "LinkedServiceReference"
-                                             },
-                       "parameters":  {
-                                          "schemaName":  {
-                                                             "type":  "string"
-                                                         },
-                                          "tableName":  {
-                                                            "type":  "string"
-                                                        }
-                                      },
-                       "typeProperties":  {
-                                              "schema":  {
-                                                             "value":  "@dataset().schemaName",
-                                                             "type":  "Expression"
-                                                         },
-                                              "table":  {
-                                                            "value":  "@dataset().tableName",
-                                                            "type":  "Expression"
-                                                        }
-                                          }
-                   },
-    "type":  "Microsoft.DataFactory/factories/datasets"
+{
+  "name": "DS_ControlDB_Table",
+  "type": "Microsoft.DataFactory/factories/datasets",
+  "properties": {
+  "type": "AzureSqlTable",
+  "linkedServiceName": { "referenceName": "LS_ControlDB", "type": "LinkedServiceReference" },
+  "parameters": {
+    "schemaName": { "type": "string" },
+    "tableName": { "type": "string" }
+  },
+  "typeProperties": {
+    "schema": { "value": "@dataset().schemaName", "type": "Expression" },
+    "table": { "value": "@dataset().tableName", "type": "Expression" }
+  }
+}
 }

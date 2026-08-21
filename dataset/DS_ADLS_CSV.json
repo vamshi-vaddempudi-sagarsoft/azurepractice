@@ -1,44 +1,24 @@
-﻿{
-    "name":  "DS_ADLS_CSV",
-    "properties":  {
-                       "type":  "DelimitedText",
-                       "linkedServiceName":  {
-                                                 "referenceName":  "LS_ADLS",
-                                                 "type":  "LinkedServiceReference"
-                                             },
-                       "parameters":  {
-                                          "container":  {
-                                                            "type":  "string"
-                                                        },
-                                          "folderPath":  {
-                                                             "type":  "string"
-                                                         },
-                                          "fileName":  {
-                                                           "type":  "string"
-                                                       }
-                                      },
-                       "typeProperties":  {
-                                              "location":  {
-                                                               "type":  "AzureBlobFSLocation",
-                                                               "fileSystem":  {
-                                                                                  "value":  "@dataset().container",
-                                                                                  "type":  "Expression"
-                                                                              },
-                                                               "folderPath":  {
-                                                                                  "value":  "@dataset().folderPath",
-                                                                                  "type":  "Expression"
-                                                                              },
-                                                               "fileName":  {
-                                                                                "value":  "@dataset().fileName",
-                                                                                "type":  "Expression"
-                                                                            }
-                                                           },
-                                              "columnDelimiter":  ",",
-                                              "firstRowAsHeader":  true
-                                          },
-                       "schema":  [
-
-                                  ]
-                   },
-    "type":  "Microsoft.DataFactory/factories/datasets"
+{
+  "name": "DS_ADLS_CSV",
+  "type": "Microsoft.DataFactory/factories/datasets",
+  "properties": {
+  "type": "DelimitedText",
+  "linkedServiceName": { "referenceName": "LS_ADLS", "type": "LinkedServiceReference" },
+  "parameters": {
+    "container": { "type": "string" },
+    "folderPath": { "type": "string" },
+    "fileName": { "type": "string" }
+  },
+  "typeProperties": {
+    "location": {
+      "type": "AzureBlobFSLocation",
+      "fileSystem": { "value": "@dataset().container", "type": "Expression" },
+      "folderPath": { "value": "@dataset().folderPath", "type": "Expression" },
+      "fileName": { "value": "@dataset().fileName", "type": "Expression" }
+    },
+    "columnDelimiter": ",",
+    "firstRowAsHeader": true
+  },
+  "schema": []
+}
 }

@@ -1,18 +1,15 @@
-﻿{
-    "name":  "LS_ControlDB",
-    "properties":  {
-                       "type":  "AzureSqlDatabase",
-                       "typeProperties":  {
-                                              "connectionString":  "Server=tcp:samplesqlserver.database.windows.net,1433;Database=sampledatabase;User ID=sqladmin;Encrypt=true;TrustServerCertificate=false;Connection Timeout=30;",
-                                              "password":  {
-                                                               "type":  "AzureKeyVaultSecret",
-                                                               "store":  {
-                                                                             "referenceName":  "LS_KeyVault",
-                                                                             "type":  "LinkedServiceReference"
-                                                                         },
-                                                               "secretName":  "sql-admin-password"
-                                                           }
-                                          }
-                   },
-    "type":  "Microsoft.DataFactory/factories/linkedservices"
+{
+  "name": "LS_ControlDB",
+  "type": "Microsoft.DataFactory/factories/linkedservices",
+  "properties": {
+  "type": "AzureSqlDatabase",
+  "typeProperties": {
+    "connectionString": "Server=tcp:samplesqlserver.database.windows.net,1433;Database=sampledatabase;User ID=sqladmin;Encrypt=true;TrustServerCertificate=false;Connection Timeout=30;",
+    "password": {
+      "type": "AzureKeyVaultSecret",
+      "store": { "referenceName": "LS_KeyVault", "type": "LinkedServiceReference" },
+      "secretName": "sql-admin-password"
+    }
+  }
+}
 }

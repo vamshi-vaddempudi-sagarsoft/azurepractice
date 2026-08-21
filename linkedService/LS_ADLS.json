@@ -1,10 +1,10 @@
-﻿{
-    "name":  "LS_ADLS",
-    "properties":  {
-                       "type":  "AzureBlobFS",
-                       "typeProperties":  {
-                                              "url":  "https://samplestorageaccount8897.dfs.core.windows.net"
-                                          }
-                   },
-    "type":  "Microsoft.DataFactory/factories/linkedservices"
+{
+  "name": "LS_ADLS",
+  "type": "Microsoft.DataFactory/factories/linkedservices",
+  "properties": {
+  "type": "AzureBlobFS",
+  "typeProperties": {
+    "url": "https://samplestorageaccount8897.dfs.core.windows.net"
+  }
+}
 }

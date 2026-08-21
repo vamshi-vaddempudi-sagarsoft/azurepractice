@@ -1,18 +1,15 @@
-﻿{
-    "name":  "LS_Synapse",
-    "properties":  {
-                       "type":  "AzureSqlDW",
-                       "typeProperties":  {
-                                              "connectionString":  "Server=tcp:samplesynapsews0821.sql.azuresynapse.net,1433;Database=salesdw;User ID=synadmin;Encrypt=true;TrustServerCertificate=false;Connection Timeout=30;",
-                                              "password":  {
-                                                               "type":  "AzureKeyVaultSecret",
-                                                               "store":  {
-                                                                             "referenceName":  "LS_KeyVault",
-                                                                             "type":  "LinkedServiceReference"
-                                                                         },
-                                                               "secretName":  "sql-admin-password"
-                                                           }
-                                          }
-                   },
-    "type":  "Microsoft.DataFactory/factories/linkedservices"
+{
+  "name": "LS_Synapse",
+  "type": "Microsoft.DataFactory/factories/linkedservices",
+  "properties": {
+  "type": "AzureSqlDW",
+  "typeProperties": {
+    "connectionString": "Server=tcp:samplesynapsews0821.sql.azuresynapse.net,1433;Database=salesdw;User ID=synadmin;Encrypt=true;TrustServerCertificate=false;Connection Timeout=30;",
+    "password": {
+      "type": "AzureKeyVaultSecret",
+      "store": { "referenceName": "LS_KeyVault", "type": "LinkedServiceReference" },
+      "secretName": "sql-admin-password"
+    }
+  }
+}
 }
