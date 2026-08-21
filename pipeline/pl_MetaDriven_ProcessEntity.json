@@ -10,7 +10,7 @@
         "source": {
           "type": "AzureSqlSource",
           "sqlReaderQuery": {
-            "value": "SELECT e.EntityId, e.EntityName, e.EntityType, e.SCDType, e.StagingTable, e.TargetTable, e.BusinessKeyColumns, e.SourceContainer, e.SourcePathPattern, e.SourceFileName, (SELECT STRING_AGG(TargetColumn, ',') FROM meta.ColumnMapping cm WHERE cm.EntityId = e.EntityId AND cm.IsBusinessKey = 0) AS AttributeColumns, CASE WHEN e.EntityType='Fact' THEN 'Fact' WHEN e.SCDType=2 THEN 'SCD2' ELSE 'SCD1Generic' END AS LoadPath FROM meta.EntityConfig e WHERE e.EntityId = @{pipeline().parameters.EntityId}",
+            "value": "SELECT e.EntityId, e.EntityName, e.EntityType, e.SCDType, e.StagingTable, e.TargetTable, e.BusinessKeyColumns, e.SourceContainer, e.SourcePathPattern, e.SourceFileName, e.ChunkSize, (SELECT STRING_AGG(TargetColumn, ',') FROM meta.ColumnMapping cm WHERE cm.EntityId = e.EntityId AND cm.IsBusinessKey = 0) AS AttributeColumns, CASE WHEN e.EntityType='Fact' THEN 'Fact' WHEN e.SCDType=2 THEN 'SCD2' ELSE 'SCD1Generic' END AS LoadPath FROM meta.EntityConfig e WHERE e.EntityId = @{pipeline().parameters.EntityId}",
             "type": "Expression"
           }
         },
@@ -128,23 +128,45 @@
       }
     },
     {
-      "name": "Validate",
-      "type": "SqlServerStoredProcedure",
+      "name": "ValidateChunks",
+      "type": "ForEach",
       "dependsOn": [ { "activity": "LandToStaging", "dependencyConditions": [ "Succeeded" ] } ],
-      "policy": { "timeout": "0.00:30:00", "retry": 1, "retryIntervalInSeconds": 30, "secureOutput": false, "secureInput": false },
-      "linkedServiceName": { "referenceName": "LS_ControlDB", "type": "LinkedServiceReference" },
       "typeProperties": {
-        "storedProcedureName": "meta.usp_ValidateEntity",
-        "storedProcedureParameters": {
-          "EntityId": { "value": "@pipeline().parameters.EntityId", "type": "Int32" },
-          "BatchId": { "value": "@pipeline().RunId", "type": "String" }
-        }
+        "items": {
+          "value": "@range(0, div(add(activity('LandToStaging').output.rowsCopied, sub(activity('GetEntityConfig').output.firstRow.ChunkSize, 1)), activity('GetEntityConfig').output.firstRow.ChunkSize))",
+          "type": "Expression"
+        },
+        "isSequential": false,
+        "batchCount": 4,
+        "activities": [
+          {
+            "name": "ValidateChunk",
+            "type": "SqlServerStoredProcedure",
+            "policy": { "timeout": "0.00:30:00", "retry": 1, "retryIntervalInSeconds": 30, "secureOutput": false, "secureInput": false },
+            "linkedServiceName": { "referenceName": "LS_ControlDB", "type": "LinkedServiceReference" },
+            "typeProperties": {
+              "storedProcedureName": "meta.usp_ValidateEntity",
+              "storedProcedureParameters": {
+                "EntityId": { "value": "@pipeline().parameters.EntityId", "type": "Int32" },
+                "BatchId": { "value": "@pipeline().RunId", "type": "String" },
+                "StartRowId": {
+                  "value": "@add(mul(item(), activity('GetEntityConfig').output.firstRow.ChunkSize), 1)",
+                  "type": "Int64"
+                },
+                "EndRowId": {
+                  "value": "@min(mul(add(item(), 1), activity('GetEntityConfig').output.firstRow.ChunkSize), activity('LandToStaging').output.rowsCopied)",
+                  "type": "Int64"
+                }
+              }
+            }
+          }
+        ]
       }
     },
     {
       "name": "Dedupe",
       "type": "SqlServerStoredProcedure",
-      "dependsOn": [ { "activity": "Validate", "dependencyConditions": [ "Succeeded" ] } ],
+      "dependsOn": [ { "activity": "ValidateChunks", "dependencyConditions": [ "Succeeded" ] } ],
       "policy": { "timeout": "0.00:30:00", "retry": 1, "retryIntervalInSeconds": 30, "secureOutput": false, "secureInput": false },
       "linkedServiceName": { "referenceName": "LS_ControlDB", "type": "LinkedServiceReference" },
       "typeProperties": {
