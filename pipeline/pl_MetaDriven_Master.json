@@ -1,0 +1,65 @@
+﻿{
+    "name":  "pl_MetaDriven_Master",
+    "properties":  {
+                       "activities":  [
+                                          {
+                                              "name":  "GetActiveEntities",
+                                              "type":  "Lookup",
+                                              "typeProperties":  {
+                                                                     "source":  {
+                                                                                    "type":  "AzureSqlSource",
+                                                                                    "sqlReaderQuery":  "SELECT EntityId, EntityName, Priority FROM meta.EntityConfig WHERE IsActive = 1 ORDER BY Priority"
+                                                                                },
+                                                                     "dataset":  {
+                                                                                     "referenceName":  "DS_ControlDB_Table",
+                                                                                     "type":  "DatasetReference",
+                                                                                     "parameters":  {
+                                                                                                        "schemaName":  "meta",
+                                                                                                        "tableName":  "EntityConfig"
+                                                                                                    }
+                                                                                 },
+                                                                     "firstRowOnly":  false
+                                                                 }
+                                          },
+                                          {
+                                              "name":  "ForEachEntity",
+                                              "type":  "ForEach",
+                                              "dependsOn":  [
+                                                                {
+                                                                    "activity":  "GetActiveEntities",
+                                                                    "dependencyConditions":  [
+                                                                                                 "Succeeded"
+                                                                                             ]
+                                                                }
+                                                            ],
+                                              "typeProperties":  {
+                                                                     "items":  {
+                                                                                   "value":  "@activity(\u0027GetActiveEntities\u0027).output.value",
+                                                                                   "type":  "Expression"
+                                                                               },
+                                                                     "isSequential":  true,
+                                                                     "activities":  [
+                                                                                        {
+                                                                                            "name":  "ExecuteEntityPipeline",
+                                                                                            "type":  "ExecutePipeline",
+                                                                                            "typeProperties":  {
+                                                                                                                   "pipeline":  {
+                                                                                                                                    "referenceName":  "pl_MetaDriven_ProcessEntity",
+                                                                                                                                    "type":  "PipelineReference"
+                                                                                                                                },
+                                                                                                                   "waitOnCompletion":  true,
+                                                                                                                   "parameters":  {
+                                                                                                                                      "EntityId":  {
+                                                                                                                                                       "value":  "@item().EntityId",
+                                                                                                                                                       "type":  "Expression"
+                                                                                                                                                   }
+                                                                                                                                  }
+                                                                                                               }
+                                                                                        }
+                                                                                    ]
+                                                                 }
+                                          }
+                                      ]
+                   },
+    "type":  "Microsoft.DataFactory/factories/pipelines"
+}

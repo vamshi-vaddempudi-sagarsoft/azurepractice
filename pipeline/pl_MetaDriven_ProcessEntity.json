@@ -1,0 +1,316 @@
+﻿{
+    "name":  "pl_MetaDriven_ProcessEntity",
+    "properties":  {
+                       "activities":  [
+                                          {
+                                              "name":  "GetEntityConfig",
+                                              "type":  "Lookup",
+                                              "typeProperties":  {
+                                                                     "source":  {
+                                                                                    "type":  "AzureSqlSource",
+                                                                                    "sqlReaderQuery":  {
+                                                                                                           "value":  "SELECT e.EntityId, e.EntityName, e.EntityType, e.SCDType, e.StagingTable, e.TargetTable, e.BusinessKeyColumns, e.SourceContainer, e.SourcePathPattern, e.SourceFileName, (SELECT STRING_AGG(TargetColumn, \u0027,\u0027) FROM meta.ColumnMapping cm WHERE cm.EntityId = e.EntityId AND cm.IsBusinessKey = 0) AS AttributeColumns, CASE WHEN e.EntityType=\u0027Fact\u0027 THEN \u0027Fact\u0027 WHEN e.SCDType=2 THEN \u0027SCD2\u0027 ELSE \u0027SCD1Generic\u0027 END AS LoadPath FROM meta.EntityConfig e WHERE e.EntityId = @{pipeline().parameters.EntityId}",
+                                                                                                           "type":  "Expression"
+                                                                                                       }
+                                                                                },
+                                                                     "dataset":  {
+                                                                                     "referenceName":  "DS_ControlDB_Table",
+                                                                                     "type":  "DatasetReference",
+                                                                                     "parameters":  {
+                                                                                                        "schemaName":  "meta",
+                                                                                                        "tableName":  "EntityConfig"
+                                                                                                    }
+                                                                                 },
+                                                                     "firstRowOnly":  true
+                                                                 }
+                                          },
+                                          {
+                                              "name":  "LandToStaging",
+                                              "type":  "Copy",
+                                              "dependsOn":  [
+                                                                {
+                                                                    "activity":  "GetEntityConfig",
+                                                                    "dependencyConditions":  [
+                                                                                                 "Succeeded"
+                                                                                             ]
+                                                                }
+                                                            ],
+                                              "typeProperties":  {
+                                                                     "source":  {
+                                                                                    "type":  "DelimitedTextSource"
+                                                                                },
+                                                                     "sink":  {
+                                                                                  "type":  "AzureSqlSink",
+                                                                                  "preCopyScript":  {
+                                                                                                        "value":  "@concat(\u0027DELETE FROM \u0027, activity(\u0027GetEntityConfig\u0027).output.firstRow.StagingTable)",
+                                                                                                        "type":  "Expression"
+                                                                                                    }
+                                                                              },
+                                                                     "enableStaging":  false
+                                                                 },
+                                              "inputs":  [
+                                                             {
+                                                                 "referenceName":  "DS_ADLS_CSV",
+                                                                 "type":  "DatasetReference",
+                                                                 "parameters":  {
+                                                                                    "container":  {
+                                                                                                      "value":  "@activity(\u0027GetEntityConfig\u0027).output.firstRow.SourceContainer",
+                                                                                                      "type":  "Expression"
+                                                                                                  },
+                                                                                    "folderPath":  {
+                                                                                                       "value":  "@activity(\u0027GetEntityConfig\u0027).output.firstRow.SourcePathPattern",
+                                                                                                       "type":  "Expression"
+                                                                                                   },
+                                                                                    "fileName":  {
+                                                                                                     "value":  "@activity(\u0027GetEntityConfig\u0027).output.firstRow.SourceFileName",
+                                                                                                     "type":  "Expression"
+                                                                                                 }
+                                                                                }
+                                                             }
+                                                         ],
+                                              "outputs":  [
+                                                              {
+                                                                  "referenceName":  "DS_ControlDB_Table",
+                                                                  "type":  "DatasetReference",
+                                                                  "parameters":  {
+                                                                                     "schemaName":  {
+                                                                                                        "value":  "@split(activity(\u0027GetEntityConfig\u0027).output.firstRow.StagingTable, \u0027.\u0027)[0]",
+                                                                                                        "type":  "Expression"
+                                                                                                    },
+                                                                                     "tableName":  {
+                                                                                                       "value":  "@split(activity(\u0027GetEntityConfig\u0027).output.firstRow.StagingTable, \u0027.\u0027)[1]",
+                                                                                                       "type":  "Expression"
+                                                                                                   }
+                                                                                 }
+                                                              }
+                                                          ]
+                                          },
+                                          {
+                                              "name":  "Validate",
+                                              "type":  "SqlServerStoredProcedure",
+                                              "dependsOn":  [
+                                                                {
+                                                                    "activity":  "LandToStaging",
+                                                                    "dependencyConditions":  [
+                                                                                                 "Succeeded"
+                                                                                             ]
+                                                                }
+                                                            ],
+                                              "linkedServiceName":  {
+                                                                        "referenceName":  "LS_ControlDB",
+                                                                        "type":  "LinkedServiceReference"
+                                                                    },
+                                              "typeProperties":  {
+                                                                     "storedProcedureName":  "meta.usp_ValidateEntity",
+                                                                     "storedProcedureParameters":  {
+                                                                                                       "EntityId":  {
+                                                                                                                        "value":  "@pipeline().parameters.EntityId",
+                                                                                                                        "type":  "Int32"
+                                                                                                                    },
+                                                                                                       "BatchId":  {
+                                                                                                                       "value":  "@pipeline().RunId",
+                                                                                                                       "type":  "String"
+                                                                                                                   }
+                                                                                                   }
+                                                                 }
+                                          },
+                                          {
+                                              "name":  "Dedupe",
+                                              "type":  "SqlServerStoredProcedure",
+                                              "dependsOn":  [
+                                                                {
+                                                                    "activity":  "Validate",
+                                                                    "dependencyConditions":  [
+                                                                                                 "Succeeded"
+                                                                                             ]
+                                                                }
+                                                            ],
+                                              "linkedServiceName":  {
+                                                                        "referenceName":  "LS_ControlDB",
+                                                                        "type":  "LinkedServiceReference"
+                                                                    },
+                                              "typeProperties":  {
+                                                                     "storedProcedureName":  "meta.usp_DeduplicateEntity",
+                                                                     "storedProcedureParameters":  {
+                                                                                                       "EntityId":  {
+                                                                                                                        "value":  "@pipeline().parameters.EntityId",
+                                                                                                                        "type":  "Int32"
+                                                                                                                    },
+                                                                                                       "BatchId":  {
+                                                                                                                       "value":  "@pipeline().RunId",
+                                                                                                                       "type":  "String"
+                                                                                                                   }
+                                                                                                   }
+                                                                 }
+                                          },
+                                          {
+                                              "name":  "ClearSynapseLanding",
+                                              "type":  "SqlServerStoredProcedure",
+                                              "dependsOn":  [
+                                                                {
+                                                                    "activity":  "Dedupe",
+                                                                    "dependencyConditions":  [
+                                                                                                 "Succeeded"
+                                                                                             ]
+                                                                }
+                                                            ],
+                                              "linkedServiceName":  {
+                                                                        "referenceName":  "LS_Synapse",
+                                                                        "type":  "LinkedServiceReference"
+                                                                    },
+                                              "typeProperties":  {
+                                                                     "storedProcedureName":  "dw.usp_TruncateTable",
+                                                                     "storedProcedureParameters":  {
+                                                                                                       "TableName":  {
+                                                                                                                         "value":  "@concat(\u0027stg.\u0027, activity(\u0027GetEntityConfig\u0027).output.firstRow.EntityName)",
+                                                                                                                         "type":  "String"
+                                                                                                                     }
+                                                                                                   }
+                                                                 }
+                                          },
+                                          {
+                                              "name":  "LandCleanToSynapse",
+                                              "type":  "Copy",
+                                              "dependsOn":  [
+                                                                {
+                                                                    "activity":  "ClearSynapseLanding",
+                                                                    "dependencyConditions":  [
+                                                                                                 "Succeeded"
+                                                                                             ]
+                                                                }
+                                                            ],
+                                              "typeProperties":  {
+                                                                     "source":  {
+                                                                                    "type":  "AzureSqlSource",
+                                                                                    "sqlReaderQuery":  {
+                                                                                                           "value":  "@concat(\u0027SELECT \u0027, activity(\u0027GetEntityConfig\u0027).output.firstRow.BusinessKeyColumns, \u0027, \u0027, activity(\u0027GetEntityConfig\u0027).output.firstRow.AttributeColumns, \u0027 FROM \u0027, activity(\u0027GetEntityConfig\u0027).output.firstRow.StagingTable, \u0027 s WHERE s.StagingRowId NOT IN (SELECT SourceRowId FROM stg.ErrorRows WHERE EntityName=\u0027\u0027\u0027, activity(\u0027GetEntityConfig\u0027).output.firstRow.EntityName, \u0027\u0027\u0027 AND SourceRowId IS NOT NULL)\u0027)",
+                                                                                                           "type":  "Expression"
+                                                                                                       }
+                                                                                },
+                                                                     "sink":  {
+                                                                                  "type":  "AzureSqlDWSink",
+                                                                                  "allowCopyCommand":  false
+                                                                              }
+                                                                 },
+                                              "inputs":  [
+                                                             {
+                                                                 "referenceName":  "DS_ControlDB_Table",
+                                                                 "type":  "DatasetReference",
+                                                                 "parameters":  {
+                                                                                    "schemaName":  {
+                                                                                                       "value":  "@split(activity(\u0027GetEntityConfig\u0027).output.firstRow.StagingTable, \u0027.\u0027)[0]",
+                                                                                                       "type":  "Expression"
+                                                                                                   },
+                                                                                    "tableName":  {
+                                                                                                      "value":  "@split(activity(\u0027GetEntityConfig\u0027).output.firstRow.StagingTable, \u0027.\u0027)[1]",
+                                                                                                      "type":  "Expression"
+                                                                                                  }
+                                                                                }
+                                                             }
+                                                         ],
+                                              "outputs":  [
+                                                              {
+                                                                  "referenceName":  "DS_Synapse_Table",
+                                                                  "type":  "DatasetReference",
+                                                                  "parameters":  {
+                                                                                     "schemaName":  "stg",
+                                                                                     "tableName":  {
+                                                                                                       "value":  "@activity(\u0027GetEntityConfig\u0027).output.firstRow.EntityName",
+                                                                                                       "type":  "Expression"
+                                                                                                   }
+                                                                                 }
+                                                              }
+                                                          ]
+                                          },
+                                          {
+                                              "name":  "LoadWarehouse",
+                                              "type":  "Switch",
+                                              "dependsOn":  [
+                                                                {
+                                                                    "activity":  "LandCleanToSynapse",
+                                                                    "dependencyConditions":  [
+                                                                                                 "Succeeded"
+                                                                                             ]
+                                                                }
+                                                            ],
+                                              "typeProperties":  {
+                                                                     "on":  {
+                                                                                "value":  "@activity(\u0027GetEntityConfig\u0027).output.firstRow.LoadPath",
+                                                                                "type":  "Expression"
+                                                                            },
+                                                                     "cases":  [
+                                                                                   {
+                                                                                       "value":  "Fact",
+                                                                                       "activities":  [
+                                                                                                          {
+                                                                                                              "name":  "LoadFact",
+                                                                                                              "type":  "SqlServerStoredProcedure",
+                                                                                                              "linkedServiceName":  {
+                                                                                                                                        "referenceName":  "LS_Synapse",
+                                                                                                                                        "type":  "LinkedServiceReference"
+                                                                                                                                    },
+                                                                                                              "typeProperties":  {
+                                                                                                                                     "storedProcedureName":  "dw.usp_LoadFactSales"
+                                                                                                                                 }
+                                                                                                          }
+                                                                                                      ]
+                                                                                   },
+                                                                                   {
+                                                                                       "value":  "SCD2",
+                                                                                       "activities":  [
+                                                                                                          {
+                                                                                                              "name":  "LoadDimCustomer",
+                                                                                                              "type":  "SqlServerStoredProcedure",
+                                                                                                              "linkedServiceName":  {
+                                                                                                                                        "referenceName":  "LS_Synapse",
+                                                                                                                                        "type":  "LinkedServiceReference"
+                                                                                                                                    },
+                                                                                                              "typeProperties":  {
+                                                                                                                                     "storedProcedureName":  "dw.usp_LoadDimCustomer"
+                                                                                                                                 }
+                                                                                                          }
+                                                                                                      ]
+                                                                                   }
+                                                                               ],
+                                                                     "defaultActivities":  [
+                                                                                               {
+                                                                                                   "name":  "LoadDimGeneric",
+                                                                                                   "type":  "SqlServerStoredProcedure",
+                                                                                                   "linkedServiceName":  {
+                                                                                                                             "referenceName":  "LS_Synapse",
+                                                                                                                             "type":  "LinkedServiceReference"
+                                                                                                                         },
+                                                                                                   "typeProperties":  {
+                                                                                                                          "storedProcedureName":  "dw.usp_LoadDimGeneric",
+                                                                                                                          "storedProcedureParameters":  {
+                                                                                                                                                            "StagingTable":  {
+                                                                                                                                                                                 "value":  "@activity(\u0027GetEntityConfig\u0027).output.firstRow.StagingTable",
+                                                                                                                                                                                 "type":  "String"
+                                                                                                                                                                             },
+                                                                                                                                                            "TargetTable":  {
+                                                                                                                                                                                "value":  "@activity(\u0027GetEntityConfig\u0027).output.firstRow.TargetTable",
+                                                                                                                                                                                "type":  "String"
+                                                                                                                                                                            },
+                                                                                                                                                            "BusinessKeyCol":  {
+                                                                                                                                                                                   "value":  "@activity(\u0027GetEntityConfig\u0027).output.firstRow.BusinessKeyColumns",
+                                                                                                                                                                                   "type":  "String"
+                                                                                                                                                                               },
+                                                                                                                                                            "AttributeCols":  {
+                                                                                                                                                                                  "value":  "@activity(\u0027GetEntityConfig\u0027).output.firstRow.AttributeColumns",
+                                                                                                                                                                                  "type":  "String"
+                                                                                                                                                                              }
+                                                                                                                                                        }
+                                                                                                                      }
+                                                                                               }
+                                                                                           ]
+                                                                 }
+                                          }
+                                      ],
+                       "parameters":  {
+                                          "EntityId":  {
+                                                           "type":  "int"
+                                                       }
+                                      }
+                   },
+    "type":  "Microsoft.DataFactory/factories/pipelines"
+}

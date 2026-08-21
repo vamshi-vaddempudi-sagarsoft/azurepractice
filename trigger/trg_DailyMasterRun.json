@@ -1,0 +1,23 @@
+﻿{
+    "name":  "trg_DailyMasterRun",
+    "properties":  {
+                       "type":  "ScheduleTrigger",
+                       "typeProperties":  {
+                                              "recurrence":  {
+                                                                 "frequency":  "Day",
+                                                                 "interval":  1,
+                                                                 "startTime":  "2026-08-22T02:00:00Z",
+                                                                 "timeZone":  "UTC"
+                                                             }
+                                          },
+                       "pipelines":  [
+                                         {
+                                             "pipelineReference":  {
+                                                                       "referenceName":  "pl_MetaDriven_Master",
+                                                                       "type":  "PipelineReference"
+                                                                   }
+                                         }
+                                     ]
+                   },
+    "type":  "Microsoft.DataFactory/factories/triggers"
+}
